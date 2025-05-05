@@ -1,0 +1,15 @@
+{
+    "batch_size": 8,
+    "lr": 0.00018943020546534643,
+    "weight_decay": 6.52620774908261e-05,
+    "label_smoothing": 0.10624126167533168,
+    "n_mels": 92,
+    "initial_filters": 64,
+    "filter_multiplier": 2,
+    "fc_size": 1024,
+    "dropout": 0.2451735125777227,
+    "attention_reduction": 32,
+    "use_mixup": true,
+    "mixup_alpha": 0.31342993549302467,
+    "scheduler_type": "cosine"
+}
