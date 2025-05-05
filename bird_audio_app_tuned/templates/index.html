@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% block title %}Analyser un son | Bird Audio Classifier{% endblock %}
+
+{% block content %}
+<div class="analyze-header py-4">
+    <div class="container">
+        <h2 class="text-center mb-3"><i class="fas fa-waveform me-2"></i> Analyse de sons d'oiseaux</h2>
+        <p class="lead text-center">Téléchargez un enregistrement pour identifier l'espèce d'oiseau</p>
+    </div>
+</div>
+
+<div class="container my-4">
+    <div class="row">
+        <div class="col-lg-10 offset-lg-1">
+            <div class="card shadow border-0 rounded-4 upload-card">
+                <div class="card-body p-4">
+                    <div class="upload-area text-center p-5 mb-3" id="upload-area">
+                        <i class="fas fa-cloud-upload-alt fa-3x mb-3 upload-icon"></i>
+                        <h4>Glissez et déposez votre fichier audio</h4>
+                        <p class="mb-4">ou</p>
+                        <label for="file-input" class="btn btn-primary btn-lg">
+                            <i class="fas fa-folder-open me-2"></i> Parcourir
+                        </label>
+                        <input type="file" id="file-input" class="hidden-file-input" accept="audio/*">
+                        <p class="small text-muted mt-3">Formats supportés: WAV, MP3, OGG (max 16MB)</p>
+                    </div>
+                    
+                    <div id="loading" class="text-center d-none p-5">
+                        <div class="spinner">
+                            <div class="double-bounce1"></div>
+                            <div class="double-bounce2"></div>
+                        </div>
+                        <p class="mt-3">Analyse en cours...</p>
+                    </div>
+                    
+                    <div id="error-message" class="alert alert-danger d-none"></div>
+                </div>
+            </div>
+            
+            <div id="results" class="d-none mt-5">
+                <div class="card shadow border-0 rounded-4 mb-4 results-card">
+                    <div class="card-header bg-transparent border-0 pt-4">
+                        <h3 class="text-center"><i class="fas fa-list-ol me-2"></i> Résultats de l'analyse</h3>
+                    </div>
+                    <div class="card-body p-4">
+                        <div class="audio-player mb-4">
+                            <h5><i class="fas fa-volume-up me-2"></i> Enregistrement audio</h5>
+                            <audio id="audio-player" controls class="w-100" preload="auto"></audio>
+                        </div>
+                        
+                        <div class="visualizations mb-4">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <h5><i class="fas fa-wave-square me-2"></i> Forme d'onde</h5>
+                                    <div class="viz-container">
+                                        <img id="waveform-img" class="img-fluid" alt="Visualisation de la forme d'onde">
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <h5><i class="fas fa-chart-bar me-2"></i> Spectrogramme</h5>
+                                    <div class="viz-container">
+                                        <img id="spectrogram-img" class="img-fluid" alt="Visualisation du spectrogramme">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <h5 class="mb-3"><i class="fas fa-bird me-2"></i> Espèces identifiées</h5>
+                        <div id="predictions" class="row prediction-cards"></div>
+                        
+                        <div class="text-center mt-5">
+                            <button id="reset-btn" class="btn btn-primary">
+                                <i class="fas fa-redo me-2"></i> Analyser un autre son
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function() {
+        // Setup le drag & drop
+        const uploadArea = document.getElementById('upload-area');
+        const fileInput = document.getElementById('file-input');
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, highlight, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, unhighlight, false);
+        });
+        
+        function highlight() {
+            uploadArea.classList.add('highlight');
+        }
+        
+        function unhighlight() {
+            uploadArea.classList.remove('highlight');
+        }
+        
+        uploadArea.addEventListener('drop', handleDrop, false);
+        
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            
+            if (files.length > 0) {
+                handleFiles(files[0]);
+            }
+        }
+        
+        fileInput.addEventListener('change', function() {
+            if (this.files.length > 0) {
+                handleFiles(this.files[0]);
+            }
+        });
+        
+        function handleFiles(file) {
+            if (!file.type.startsWith('audio/')) {
+                showError('Veuillez télécharger un fichier audio');
+                return;
+            }
+            
+            // Afficher l'indicateur de chargement
+            $('#upload-area').addClass('d-none');
+            $('#loading').removeClass('d-none');
+            $('#error-message').addClass('d-none');
+            
+            // Créer FormData
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            // Envoyer le fichier au serveur
+            $.ajax({
+                url: '/upload',
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(response) {
+                    $('#loading').addClass('d-none');
+                    
+                    if (response.success) {
+                        displayResults(response);
+                    } else {
+                        showError(response.error || 'Une erreur est survenue lors du traitement de l\'audio');
+                    }
+                },
+                error: function() {
+                    $('#loading').addClass('d-none');
+                    showError('Erreur serveur. Veuillez réessayer plus tard.');
+                }
+            });
+        }
+        
+        function showError(message) {
+            $('#error-message').removeClass('d-none').text(message);
+            $('#upload-area').removeClass('d-none');
+        }
+        
+        function displayResults(data) {
+            // Cacher complètement la carte de téléchargement
+            $('.upload-card').addClass('d-none');
+            
+            // Définir la source audio
+            $('#audio-player').attr('src', data.audio_path);
+            
+            // Définir les images de visualisation
+            $('#waveform-img').attr('src', 'data:image/png;base64,' + data.waveform_img);
+            $('#spectrogram-img').attr('src', 'data:image/png;base64,' + data.spectrogram_img);
+            
+            // Effacer et ajouter les prédictions
+            const predictionsContainer = $('#predictions');
+            predictionsContainer.empty();
+            
+            data.predictions.forEach((pred, index) => {
+                const birdCode = pred.class;
+                const probability = pred.probability.toFixed(1);
+                const birdName = pred.info?.name || birdCode;
+                const description = pred.info?.description || 'Pas de description disponible';
+                const imageSrc = pred.image || '/static/bird_images/unknown.jpg';
+                
+                let cardClass = '';
+                let badgeClass = 'bg-secondary';
+                
+                if (index === 0) {
+                    cardClass = 'highlight-card';
+                    badgeClass = 'bg-success';
+                }
+                
+                const predictionCard = `
+                    <div class="col-lg-4 col-md-6 mb-4">
+                        <div class="card prediction-card h-100 ${cardClass}" data-aos="fade-up" data-aos-delay="${index * 100}">
+                            <div class="bird-img-container">
+                                <img src="${imageSrc}" class="card-img-top bird-image" alt="${birdName}">
+                                <span class="probability-badge ${badgeClass}">${probability}%</span>
+                            </div>
+                            <div class="card-body">
+                                <h5 class="card-title d-flex justify-content-between">
+                                    ${birdName}
+                                    ${index === 0 ? '<span class="top-match-badge"><i class="fas fa-award"></i> Meilleure correspondance</span>' : ''}
+                                </h5>
+                                <div class="progress mb-3">
+                                    <div class="progress-bar ${index === 0 ? 'bg-success' : ''}" 
+                                         role="progressbar" 
+                                         style="width: ${probability}%" 
+                                         aria-valuenow="${probability}" 
+                                         aria-valuemin="0" 
+                                         aria-valuemax="100">
+                                    </div>
+                                </div>
+                                <p class="card-text bird-description">${description}</p>
+                                <p class="card-text"><small class="text-muted">Code: ${birdCode}</small></p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                predictionsContainer.append(predictionCard);
+            });
+            
+            // Afficher les résultats avec une animation
+            $('#results').removeClass('d-none').hide().fadeIn(500);
+        }
+        
+        // Bouton de réinitialisation - correction
+        $('#reset-btn').click(function() {
+            // Masquer les résultats
+            $('#results').addClass('d-none');
+            
+            // Réafficher la carte de téléchargement
+            $('.upload-card').removeClass('d-none');
+            
+            // Réinitialiser l'interface
+            $('#upload-area').removeClass('d-none');
+            $('#loading').addClass('d-none');
+            $('#file-input').val('');
+            $('#error-message').addClass('d-none');
+        });
+    });
+</script>
+{% endblock %}
